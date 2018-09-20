@@ -7,4 +7,4 @@ gitlab.com/gopherburrow/csrfcookie
 
 ![Gopher Burrow Logo](https://gitlab.com/gopherburrow/art/raw/master/gopherburrow.png)
 
-`gitlab.com/gopherburrow/csrfcookie` Package csrfcookie contains an Cross Site Request Forgery (CSRF) protection mechanism utilizing the Double-Submit-Cookie pattern with a JWT token.
+`gitlab.com/gopherburrow/csrfcookie` contains an Cross Site Request Forgery (CSRF) protection mechanism utilizing the Double-Submit-Cookie pattern with a JWT token.
