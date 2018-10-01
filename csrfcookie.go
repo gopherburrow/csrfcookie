@@ -50,7 +50,6 @@ const (
 	defaultFormFieldName = "csrf-token"
 	ctxHandlerValue      = "gitlab.com/gopherburrow/csrfcookie Handler"
 	ctxErrorValue        = "gitlab.com/gopherburrow/csrfcookie Error"
-	secretDefaultLen     = 32 //Maybe 64 byte key would be better?
 )
 
 //Used in request contexts. Go suggests using a specific type different from string for context keys.
@@ -80,6 +79,8 @@ var (
 	ErrConfigMustBeNonNil = errors.New("csrfcookie: config must be non nil")
 	//ErrHandlerMustBeNotNil is returned in NewFormHandler and NewApiHandler method when the chain parameter is nil.
 	ErrChainHandlerMustBeNonNil = errors.New("csrfcookie: chain handler must be non nil")
+	//ErrClaimsMustBeNotEmpty ir returned when claims are nil or empty in Create() method.
+	ErrClaimsMustBeNotEmpty = errors.New("csrfcookie: claims must be not empty")
 	//ErrErrorCreatingSecret is returned when an inexpected error happened during token secret creation in NewFormHandler() or NewAPIHandler methods.
 	ErrErrorCreatingSecret = errors.New("csrfcookie: an error happened while creating the CSRF token secret")
 )
@@ -448,22 +449,20 @@ func (fh *apiHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 //Create a CSRF Token Cookie, put it on Response Headers and return it value.
 //
 //nonce must be a short-lived value to avoid replay attacks. Normally a session long nonce expiry time is enough.
-func Create(nonce string, w http.ResponseWriter, r *http.Request) (string, *WebError) {
+func Create(w http.ResponseWriter, r *http.Request, claims map[string]interface{}) (string, *WebError) {
 	c, ok := r.Context().Value(ctxHandler).(*Config)
 	if !ok {
 		return "", ErrRequestMustHaveContext
+	}
+
+	if claims == nil || len(claims) == 0 {
+		return "", ErrClaimsMustBeNotEmpty
 	}
 
 	//Recover the secret handling errors.
 	s, err := secret(c, r)
 	if err != nil {
 		return "", err
-	}
-
-	//Create JWT Claims
-	claims := map[string]interface{}{
-		"nonce": nonce,
-		//TODO Check if a jwt.ClaimIssuedAt or jwt.ClaimExpirationTime: jwt.NumericDate(time.Now()) is worth, creating the possibility to check expiration.
 	}
 
 	//Create the signed token, if there is an error return it.
@@ -675,8 +674,8 @@ func checkTokenValue(c *Config, r *http.Request, requestToken string) *WebError 
 	}
 
 	//Find the CSRF Cookie assuring it is unique.
-	//To avoid nasty bugs on users delete if it is not unique(That is the reason not use r.Cookie(name)).
-	//It can happens when a cookie domain is added when it was not set before.
+	//To avoid nasty bugs on users, delete if it is not unique(That is the reason not use r.Cookie(name)).
+	//It can happens when a cookie domain is added or changed.
 	var cookie *http.Cookie
 	for _, ac := range r.Cookies() {
 		if ac.Name == name {
@@ -744,7 +743,6 @@ func secret(c *Config, r *http.Request) ([]byte, *WebError) {
 	}
 
 	return secret, nil
-
 }
 
 //errorHandler calls the Handler.ErrorHandler it there is one, if not, call the default behavior.

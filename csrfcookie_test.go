@@ -235,7 +235,8 @@ func TestMethods_fail_invalidInputs(t *testing.T) {
 
 func TestCreateValueDeleteAndFormFieldName_fail_noContext(t *testing.T) {
 	unmanagedHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_, err := csrfcookie.Create("123456", w, r)
+		claims := map[string]interface{}{"nonce": "123456"}
+		_, err := csrfcookie.Create(w, r, claims)
 		if want, got := csrfcookie.ErrRequestMustHaveContext, err; want != got {
 			t.Fatalf("want=%q, got=%q", want, got)
 		}
@@ -935,7 +936,8 @@ func TestWebError_Error(t *testing.T) {
 }
 
 func createCSRFFormValueFunc(w http.ResponseWriter, r *http.Request) {
-	v, webErr := csrfcookie.Create("123456", w, r)
+	claims := map[string]interface{}{"nonce": "123456"}
+	v, webErr := csrfcookie.Create(w, r, claims)
 	if webErr != nil {
 		w.WriteHeader(webErr.HTTPStatusCode)
 		fmt.Fprint(w, getErrorName(webErr))
@@ -951,7 +953,8 @@ func createCSRFFormValueFunc(w http.ResponseWriter, r *http.Request) {
 }
 
 func createCSRFValueFunc(w http.ResponseWriter, r *http.Request) {
-	v, webErr := csrfcookie.Create("123456", w, r)
+	claims := map[string]interface{}{"nonce": "123456"}
+	v, webErr := csrfcookie.Create(w, r, claims)
 	if webErr != nil {
 		w.WriteHeader(webErr.HTTPStatusCode)
 		fmt.Fprint(w, getErrorName(webErr))
