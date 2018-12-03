@@ -79,8 +79,6 @@ var (
 	ErrConfigMustBeNonNil = errors.New("csrfcookie: config must be non nil")
 	//ErrHandlerMustBeNotNil is returned in NewFormHandler and NewApiHandler method when the chain parameter is nil.
 	ErrChainHandlerMustBeNonNil = errors.New("csrfcookie: chain handler must be non nil")
-	//ErrClaimsMustBeNotEmpty ir returned when claims are nil or empty in Create() method.
-	ErrClaimsMustBeNotEmpty = errors.New("csrfcookie: claims must be not empty")
 	//ErrErrorCreatingSecret is returned when an inexpected error happened during token secret creation in NewFormHandler() or NewAPIHandler methods.
 	ErrErrorCreatingSecret = errors.New("csrfcookie: an error happened while creating the CSRF token secret")
 )
@@ -119,6 +117,8 @@ var (
 	//ErrCookiePathMustMatch is returned when the Handler serves a request to a path that
 	//it will not be able to receive the cookie because the cookie path is set to another path than the served one.
 	ErrPathMustMatchRequest = &WebError{http.StatusInternalServerError, "csrfcookie: CSRF protection cookie path must match request path"}
+	//ErrClaimsMustBeNotEmpty ir returned when claims are nil or empty in Create() method.
+	ErrClaimsMustBeNotEmpty = &WebError{http.StatusInternalServerError, "csrfcookie: claims must be not empty"}
 	//ErrSecretError is returned when the csrfcookie.Handler.SecretFunc is set but it returned a empty secret.
 	ErrSecretError = &WebError{http.StatusInternalServerError, "csrfcookie: the CSRF token secret cannot be empty"}
 )
