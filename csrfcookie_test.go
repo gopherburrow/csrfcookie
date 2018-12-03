@@ -836,7 +836,11 @@ func TestNewAPIHandler_fail_ErrTokenSignatureMustMatch(t *testing.T) {
 
 //*******************
 
+<<<<<<< HEAD
+func TestCreate_fail_ErrClaimsMustBeNotEmpty_NilClaim(t *testing.T) {
+=======
 func TestCreate_fail_ErrClaimsMustBeNotEmpty(t *testing.T) {
+>>>>>>> ec6b78a02b3bdf3e8fdfda1c56769ca277149d09
 	conf := &csrfcookie.Config{ErrorHandler: http.HandlerFunc(errorHandlerFunc)}
 	h, err := csrfcookie.NewFormHandler(conf, http.HandlerFunc(
 		func(w http.ResponseWriter, r *http.Request) {
@@ -872,6 +876,46 @@ func TestCreate_fail_ErrClaimsMustBeNotEmpty(t *testing.T) {
 	}
 }
 
+<<<<<<< HEAD
+func TestCreate_fail_ErrClaimsMustBeNotEmpty_EmptyClaim(t *testing.T) {
+	conf := &csrfcookie.Config{ErrorHandler: http.HandlerFunc(errorHandlerFunc)}
+	h, err := csrfcookie.NewFormHandler(conf, http.HandlerFunc(
+		func(w http.ResponseWriter, r *http.Request) {
+			claims := map[string]interface{}{}
+			v, webErr := csrfcookie.Create(w, r, claims)
+			if webErr != nil {
+				w.WriteHeader(webErr.HTTPStatusCode)
+				fmt.Fprint(w, getErrorName(webErr))
+				return
+			}
+			k, webErr := csrfcookie.FormFieldName(r)
+			if webErr != nil {
+				w.WriteHeader(webErr.HTTPStatusCode)
+				fmt.Fprint(w, getErrorName(webErr))
+				return
+			}
+			fmt.Fprint(w, k+"="+v)
+		},
+	))
+	if err != nil {
+		t.Fatal(err)
+	}
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "https://www.example.com", nil)
+	h.ServeHTTP(rr, req)
+	if want, got := http.StatusInternalServerError, rr.Code; want != got {
+		t.Fatalf("want=%d, got=%d, body=%q", want, got, rr.Body.String())
+	}
+	if want, got := "ErrClaimsMustBeNotEmpty", rr.Body.String(); want != got {
+		t.Fatalf("want=%q, got=%q", want, got)
+	}
+	conf.SecretFunc = func(r *http.Request) []byte {
+		return nil
+	}
+}
+
+=======
+>>>>>>> ec6b78a02b3bdf3e8fdfda1c56769ca277149d09
 func TestCreate_fail_ErrSecretError(t *testing.T) {
 	conf := &csrfcookie.Config{ErrorHandler: http.HandlerFunc(errorHandlerFunc)}
 	h, err := csrfcookie.NewFormHandler(conf, http.HandlerFunc(createCSRFFormValueFunc))
