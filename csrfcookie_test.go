@@ -836,11 +836,7 @@ func TestNewAPIHandler_fail_ErrTokenSignatureMustMatch(t *testing.T) {
 
 //*******************
 
-<<<<<<< HEAD
 func TestCreate_fail_ErrClaimsMustBeNotEmpty_NilClaim(t *testing.T) {
-=======
-func TestCreate_fail_ErrClaimsMustBeNotEmpty(t *testing.T) {
->>>>>>> ec6b78a02b3bdf3e8fdfda1c56769ca277149d09
 	conf := &csrfcookie.Config{ErrorHandler: http.HandlerFunc(errorHandlerFunc)}
 	h, err := csrfcookie.NewFormHandler(conf, http.HandlerFunc(
 		func(w http.ResponseWriter, r *http.Request) {
@@ -876,7 +872,6 @@ func TestCreate_fail_ErrClaimsMustBeNotEmpty(t *testing.T) {
 	}
 }
 
-<<<<<<< HEAD
 func TestCreate_fail_ErrClaimsMustBeNotEmpty_EmptyClaim(t *testing.T) {
 	conf := &csrfcookie.Config{ErrorHandler: http.HandlerFunc(errorHandlerFunc)}
 	h, err := csrfcookie.NewFormHandler(conf, http.HandlerFunc(
@@ -914,8 +909,6 @@ func TestCreate_fail_ErrClaimsMustBeNotEmpty_EmptyClaim(t *testing.T) {
 	}
 }
 
-=======
->>>>>>> ec6b78a02b3bdf3e8fdfda1c56769ca277149d09
 func TestCreate_fail_ErrSecretError(t *testing.T) {
 	conf := &csrfcookie.Config{ErrorHandler: http.HandlerFunc(errorHandlerFunc)}
 	h, err := csrfcookie.NewFormHandler(conf, http.HandlerFunc(createCSRFFormValueFunc))
