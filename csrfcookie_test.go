@@ -261,7 +261,6 @@ func TestCreateValueDeleteAndFormFieldName_fail_noContext(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "https://www.example.com", nil)
 	unmanagedHandler.ServeHTTP(rr, req)
 }
-
 func TestNewFormHandler_fail_ErrMustUseTLS(t *testing.T) {
 	handler, form, cookie := setupFormHandlerAndRequestGETOnCreateCSRF(t, defConf, "https://www.example.com")
 	rr := newPostFormRequest(t, handler, "http://www.example.com", cookie, "", "http://www.example.com/", form)
@@ -837,6 +836,42 @@ func TestNewAPIHandler_fail_ErrTokenSignatureMustMatch(t *testing.T) {
 
 //*******************
 
+func TestCreate_fail_ErrClaimsMustBeNotEmpty(t *testing.T) {
+	conf := &csrfcookie.Config{ErrorHandler: http.HandlerFunc(errorHandlerFunc)}
+	h, err := csrfcookie.NewFormHandler(conf, http.HandlerFunc(
+		func(w http.ResponseWriter, r *http.Request) {
+			v, webErr := csrfcookie.Create(w, r, nil)
+			if webErr != nil {
+				w.WriteHeader(webErr.HTTPStatusCode)
+				fmt.Fprint(w, getErrorName(webErr))
+				return
+			}
+			k, webErr := csrfcookie.FormFieldName(r)
+			if webErr != nil {
+				w.WriteHeader(webErr.HTTPStatusCode)
+				fmt.Fprint(w, getErrorName(webErr))
+				return
+			}
+			fmt.Fprint(w, k+"="+v)
+		},
+	))
+	if err != nil {
+		t.Fatal(err)
+	}
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "https://www.example.com", nil)
+	h.ServeHTTP(rr, req)
+	if want, got := http.StatusInternalServerError, rr.Code; want != got {
+		t.Fatalf("want=%d, got=%d, body=%q", want, got, rr.Body.String())
+	}
+	if want, got := "ErrClaimsMustBeNotEmpty", rr.Body.String(); want != got {
+		t.Fatalf("want=%q, got=%q", want, got)
+	}
+	conf.SecretFunc = func(r *http.Request) []byte {
+		return nil
+	}
+}
+
 func TestCreate_fail_ErrSecretError(t *testing.T) {
 	conf := &csrfcookie.Config{ErrorHandler: http.HandlerFunc(errorHandlerFunc)}
 	h, err := csrfcookie.NewFormHandler(conf, http.HandlerFunc(createCSRFFormValueFunc))
@@ -981,6 +1016,8 @@ func getErrorName(webErr *csrfcookie.WebError) string {
 		return "ErrDomainMustMatchRequest"
 	case csrfcookie.ErrPathMustMatchRequest:
 		return "ErrPathMustMatchRequest"
+	case csrfcookie.ErrClaimsMustBeNotEmpty:
+		return "ErrClaimsMustBeNotEmpty"
 	case csrfcookie.ErrSecretError:
 		return "ErrSecretError"
 	case csrfcookie.ErrOriginMustMatchRequest:
