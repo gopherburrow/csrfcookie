@@ -290,6 +290,7 @@ type formHandler struct {
 //If c is nil csrfcookie.ErrConfigMustBeNonNil will be returned.
 //If chain is nil csrfcookie.ErrChainHandlerMustBeNonNil will be returned.
 func NewFormHandler(c *Config, chain http.Handler) (http.Handler, error) {
+
 	//Handle Input errors.
 	if c == nil {
 		return nil, ErrConfigMustBeNonNil
@@ -305,14 +306,33 @@ func NewFormHandler(c *Config, chain http.Handler) (http.Handler, error) {
 	}, nil
 }
 
-func validateFormToken(c *Config, r *http.Request) *WebError {
-	if err := checkPrerequisites(c, r); err != nil {
+//validateToken the common token validation in form or header CSRF.
+func validateToken(c *Config, r *http.Request) *WebError {
+	//Check all cookie request prerequisites.
+	if err := checkCookieTLSDomainAndPath(c, r); err != nil {
 		return err
 	}
 
-	//There is no necessity to protect a nullipotent request.
+	//Check the basic CSRF aware headers and their compliance with the cookie config.
+	if err := checkOriginAndReferer(c, r); err != nil {
+		return err
+	}
+
+	//No common errors were found.
+	return nil
+}
+
+//validateFormToken validates the CSRF Token in the form.
+func validateFormToken(c *Config, r *http.Request) *WebError {
+
+	//There is no necessity to protect a nullipotent request. Skip the validation.
 	if r.Method == http.MethodGet || r.Method == http.MethodHead || r.Method == http.MethodTrace || r.Method == http.MethodOptions {
 		return nil
+	}
+
+	//Test the common token validation.
+	if err := validateToken(c, r); err != nil {
+		return err
 	}
 
 	//For this specific handler, be a HTML Form request are a prerequisite for non-nulipotent requests.
@@ -325,12 +345,7 @@ func validateFormToken(c *Config, r *http.Request) *WebError {
 		return ErrRequestMustBeXWwwFormURLEncoded
 	}
 
-	//Check the basic CSRF aware headers and their compliance with the cookie config.
-	if err := checkOriginAndReferer(c, r); err != nil {
-		return err
-	}
-
-	//Read the form fields and retrieve the specific CSRF TOKEN field name, check all the errors in the process.
+	//Read the form fields and retrieve the specific CSRF TOKEN field name, checking all the errors in the process.
 	err = r.ParseForm()
 	if err != nil {
 		return ErrCannotReadFormValues
@@ -403,18 +418,16 @@ func NewAPIHandler(c *Config, chain http.Handler) (http.Handler, error) {
 	}, nil
 }
 
+//validateHeaderToken validates the CSRF Token in the header.
 func validateHeaderToken(c *Config, r *http.Request) *WebError {
-	if err := checkPrerequisites(c, r); err != nil {
-		return err
-	}
 
-	//There is no necessity to protect a nullipotent request.
+	//There is no necessity to protect a nullipotent request. Skip the validation.
 	if r.Method == http.MethodGet || r.Method == http.MethodHead || r.Method == http.MethodTrace || r.Method == http.MethodOptions {
 		return nil
 	}
 
-	//Check the basic CSRF aware headers and their compliance with the cookie config.
-	if err := checkOriginAndReferer(c, r); err != nil {
+	//Test the common token validation.
+	if err := validateToken(c, r); err != nil {
 		return err
 	}
 
@@ -561,7 +574,7 @@ func Error(r *http.Request) *WebError {
 	return m
 }
 
-func checkPrerequisites(c *Config, r *http.Request) *WebError {
+func checkCookieTLSDomainAndPath(c *Config, r *http.Request) *WebError {
 	//Only TLS requests are really protected by CSRF token protection. So deny non TLS requests.
 	if r.TLS == nil {
 		return ErrMustUseTLS
@@ -651,6 +664,7 @@ func checkReferer(c *Config, r *http.Request) *WebError {
 
 //checkOriginAndReferer returns a error if a CSRF attack was found in these Origin and Referer HTTP headers.
 func checkOriginAndReferer(c *Config, r *http.Request) *WebError {
+	//Check Both Origin and Referer match the Request.
 	if err := checkOrigin(c, r); err != nil {
 		return err
 	}
@@ -658,6 +672,7 @@ func checkOriginAndReferer(c *Config, r *http.Request) *WebError {
 		return err
 	}
 
+	//Check if Origin and Referer Headers match.
 	origin := r.Header.Get("Origin")
 	referer := r.Referer()
 	if origin != "" && referer != origin && !strings.HasPrefix(strings.TrimRight(referer, "/")+"/", strings.TrimRight(origin, "/")+"/") {
@@ -678,12 +693,14 @@ func checkTokenValue(c *Config, r *http.Request, requestToken string) *WebError 
 	//It can happens when a cookie domain is added or changed.
 	var cookie *http.Cookie
 	for _, ac := range r.Cookies() {
-		if ac.Name == name {
-			if cookie != nil {
-				return ErrMustBeUnique
-			}
-			cookie = ac
+		if ac.Name != name {
+			continue
 		}
+
+		if cookie != nil {
+			return ErrMustBeUnique
+		}
+		cookie = ac
 	}
 	if cookie == nil {
 		return ErrNotFound

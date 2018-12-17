@@ -307,6 +307,8 @@ func TestNewFormHandler_fail_ErrPathMustMatchRequest(t *testing.T) {
 func TestNewFormHandler_fail_ErrRequestMustBeXWwwFormURLEncoded(t *testing.T) {
 	handler, form, cookie := setupFormHandlerAndRequestGETOnCreateCSRF(t, defConf, "https://www.example.com")
 	req := httptest.NewRequest(http.MethodPost, "https://www.example.com", strings.NewReader(form))
+	req.Header.Add("Origin", "https://www.example.com")
+	req.Header.Add("Referer", "https://www.example.com")
 	req.AddCookie(cookie)
 	rr := httptest.NewRecorder()
 	handler.ServeHTTP(rr, req)
@@ -457,6 +459,10 @@ func TestNewFormHandler_fail_ErrCannotReadFormValues(t *testing.T) {
 func TestNewFormHandler_fail_ErrMustBeUnique(t *testing.T) {
 	handler, form, cookie := setupFormHandlerAndRequestGETOnCreateCSRF(t, defConf, "https://www.example.com/path1/subpath")
 	req := httptest.NewRequest(http.MethodPost, "https://www.example.com/path1/subpath", strings.NewReader(form))
+	req.AddCookie(&http.Cookie{
+		Name:  "Spurious-Cookie",
+		Value: "Spurious Value",
+	})
 	req.AddCookie(cookie)
 	cookie2 := &http.Cookie{
 		Name:  csrfcookie.DefaultName,
