@@ -53,6 +53,26 @@ func TestValidate_success_default(t *testing.T) {
 	}
 }
 
+func TestValidate_success_ignoreErrTokenValuesMustMatchInGetRequest(t *testing.T) {
+	token, cookie, _ := csrfcookie.Create(defConf, nil, defClaims)
+	formBody := url.QueryEscape(csrfcookie.DefaultFormFieldName) + "=" + url.QueryEscape(token+"!!!")
+	req := httptest.NewRequest(http.MethodGet, "https://www.example.com", strings.NewReader(formBody))
+	req.Header.Add("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Add("Origin", "https://www.example.com")
+	req.Header.Add("Referer", "https://www.example.com")
+	req.Header.Add(csrfcookie.DefaultHeaderName, token+"!!!")
+	req.AddCookie(cookie)
+	err := csrfcookie.ValidateWithForm(defConf, req)
+	if want, got := error(nil), err; want != got {
+		t.Fatalf("want=nil, got=%q", got)
+	}
+
+	err = csrfcookie.ValidateWithHeader(defConf, req)
+	if want, got := error(nil), err; want != got {
+		t.Fatalf("want=nil, got=%q", got)
+	}
+}
+
 func TestValidate_success_cookieNameDomainPathAndCSRFHeader(t *testing.T) {
 	customConf := &csrfcookie.Config{
 		SecretFunc: func(r *http.Request) []byte {
@@ -293,7 +313,7 @@ func TestValidate_fail_ErrOriginMustMatchRequestCookie_invalidOriginURL(t *testi
 	}
 }
 
-func TestNewFormHandler_fail_ErrRequestMustHaveReferer(t *testing.T) {
+func TestValidate_fail_ErrRequestMustHaveReferer(t *testing.T) {
 	token, cookie, _ := csrfcookie.Create(defConf, nil, defClaims)
 	formBody := url.QueryEscape(csrfcookie.DefaultFormFieldName) + "=" + url.QueryEscape(token)
 	req := httptest.NewRequest(http.MethodPost, "https://www.example.com", strings.NewReader(formBody))
@@ -311,7 +331,7 @@ func TestNewFormHandler_fail_ErrRequestMustHaveReferer(t *testing.T) {
 	}
 }
 
-func TestNewFormHandler_fail_ErrRefererMustMatchRequest(t *testing.T) {
+func TestValidate_fail_ErrRefererMustMatchRequest(t *testing.T) {
 	token, cookie, _ := csrfcookie.Create(defConf, nil, defClaims)
 	formBody := url.QueryEscape(csrfcookie.DefaultFormFieldName) + "=" + url.QueryEscape(token)
 	req := httptest.NewRequest(http.MethodPost, "https://www.example.com", strings.NewReader(formBody))
@@ -330,23 +350,26 @@ func TestNewFormHandler_fail_ErrRefererMustMatchRequest(t *testing.T) {
 	}
 }
 
-/*func TestValidate_fail_ErrRefererMustMatchCookiePath_invalidRefererURL(t *testing.T) {
-	conf := &csrfcookie.Config{SecretFunc: defaultSecret, ErrorHandler: http.HandlerFunc(errorHandlerFunc)}
-	if err := conf.SetPath("/api"); err != nil {
-		t.Fatal(err)
+func TestValidate_fail_ErrRefererMustMatchCookiePath_invalidRefererURL(t *testing.T) {
+	token, cookie, _ := csrfcookie.Create(defConf, nil, defClaims)
+	formBody := url.QueryEscape(csrfcookie.DefaultFormFieldName) + "=" + url.QueryEscape(token)
+	req := httptest.NewRequest(http.MethodPost, "https://www.example.com", strings.NewReader(formBody))
+	req.Header.Add("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Add("Origin", "https://www.example.com")
+	req.Header.Add("Referer", "totalgarbage")
+	req.Header.Add(csrfcookie.DefaultHeaderName, token)
+	req.AddCookie(cookie)
+	err := csrfcookie.ValidateWithForm(defConf, req)
+	if want, got := csrfcookie.ErrRefererMustMatchRequest, err; want != got {
+		t.Fatalf("want=%q, got=%q", want, got)
 	}
-	handler, form, cookie := setupFormHandlerAndRequestGETOnCreateCSRF(t, conf, "https://www.example.com/api")
-	rr := newPostFormRequest(t, handler, "https://www.example.com/api", cookie, "https://www.example.com", "totalgarbage", form)
-	if want, got := http.StatusForbidden, rr.Code; want != got {
-		t.Fatalf("want=%d, got=%d, body=%q", want, got, rr.Body.String())
-	}
-	if want, got := "ErrRefererMustMatchRequest", rr.Body.String(); want != got {
+	err = csrfcookie.ValidateWithHeader(defConf, req)
+	if want, got := csrfcookie.ErrRefererMustMatchRequest, err; want != got {
 		t.Fatalf("want=%q, got=%q", want, got)
 	}
 }
-*/
 
-func TestNewFormHandler_fail_ErrRefererMustMatchCookieDomain(t *testing.T) {
+func TestValidate_fail_ErrRefererMustMatchCookieDomain(t *testing.T) {
 	conf := &csrfcookie.Config{SecretFunc: defaultSecretFn}
 	if err := conf.SetCookieDomain(".example.com"); err != nil {
 		t.Fatal(err)
@@ -372,7 +395,7 @@ func TestNewFormHandler_fail_ErrRefererMustMatchCookieDomain(t *testing.T) {
 
 }
 
-func TestNewFormHandler_fail_ErrRefererMustMatchCookiePath(t *testing.T) {
+func TestValidate_fail_ErrRefererMustMatchCookiePath(t *testing.T) {
 	conf := &csrfcookie.Config{SecretFunc: defaultSecretFn}
 	if err := conf.SetCookiePath("/api"); err != nil {
 		t.Fatal(err)
@@ -397,428 +420,270 @@ func TestNewFormHandler_fail_ErrRefererMustMatchCookiePath(t *testing.T) {
 	}
 }
 
-/*
-func TestNewFormHandler_fail_ErrRefererMustMatchOrigin(t *testing.T) {
-	conf := &csrfcookie.Config{SecretFunc: defaultSecret, ErrorHandler: http.HandlerFunc(errorHandlerFunc)}
-	if err := conf.SetDomain(".example.com"); err != nil {
+func TestValidate_fail_ErrRefererMustMatchOrigin(t *testing.T) {
+	conf := &csrfcookie.Config{SecretFunc: defaultSecretFn}
+	if err := conf.SetCookieDomain(".example.com"); err != nil {
 		t.Fatal(err)
 	}
-	handler, form, cookie := setupFormHandlerAndRequestGETOnCreateCSRF(t, conf, "https://www.example.com")
-	rr := newPostFormRequest(t, handler, "https://www.example.com", cookie, "https://app1.example.com", "https://app2.example.com", form)
-	if want, got := http.StatusForbidden, rr.Code; want != got {
-		t.Fatalf("want=%d, got=%d, body=%q", want, got, rr.Body.String())
+
+	token, cookie, _ := csrfcookie.Create(conf, nil, defClaims)
+	formBody := url.QueryEscape(csrfcookie.DefaultFormFieldName) + "=" + url.QueryEscape(token)
+	req := httptest.NewRequest(http.MethodPost, "https://www.example.com", strings.NewReader(formBody))
+	req.Header.Add("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Add("Origin", "https://app1.example.com")
+	req.Header.Add("Referer", "https://app2.example.com")
+	req.Header.Add(csrfcookie.DefaultHeaderName, token)
+	req.AddCookie(cookie)
+	err := csrfcookie.ValidateWithForm(conf, req)
+	if want, got := csrfcookie.ErrOriginAndRefererMustMatch, err; want != got {
+		t.Fatalf("want=%q, got=%q", want, got)
 	}
-	if want, got := "ErrOriginAndRefererMustMatch", rr.Body.String(); want != got {
+
+	err = csrfcookie.ValidateWithHeader(conf, req)
+	if want, got := csrfcookie.ErrOriginAndRefererMustMatch, err; want != got {
 		t.Fatalf("want=%q, got=%q", want, got)
 	}
 }
 
-func TestNewFormHandler_fail_ErrCannotReadFormValues(t *testing.T) {
-	handler, _, cookie := setupFormHandlerAndRequestGETOnCreateCSRF(t, defConf, "https://www.example.com")
-	rr := newPostFormRequest(t, handler, "https://www.example.com", cookie, "", "https://www.example.com", "@%=sfsdfsdf5")
-	if want, got := http.StatusBadRequest, rr.Code; want != got {
-		t.Fatalf("want=%d, got=%d, body=%q", want, got, rr.Body.String())
-	}
-	if want, got := "ErrCannotReadFormValues", rr.Body.String(); want != got {
+func TestValidate_fail_ErrCannotReadFormValues(t *testing.T) {
+	token, cookie, _ := csrfcookie.Create(defConf, nil, defClaims)
+	req := httptest.NewRequest(http.MethodPost, "https://www.example.com", strings.NewReader("@%=sfsdfsdf5"))
+	req.Header.Add("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Add("Origin", "https://www.example.com")
+	req.Header.Add("Referer", "https://www.example.com")
+	req.Header.Add(csrfcookie.DefaultHeaderName, token)
+	req.AddCookie(cookie)
+	err := csrfcookie.ValidateWithForm(defConf, req)
+	if want, got := csrfcookie.ErrCannotReadFormValues, err; want != got {
 		t.Fatalf("want=%q, got=%q", want, got)
+	}
+
+	err = csrfcookie.ValidateWithHeader(defConf, req)
+	if want, got := error(nil), err; want != got {
+		t.Fatalf("want=nil, got=%q", got)
 	}
 }
 
-func TestNewFormHandler_fail_ErrMustBeUnique(t *testing.T) {
-	handler, form, cookie := setupFormHandlerAndRequestGETOnCreateCSRF(t, defConf, "https://www.example.com/path1/subpath")
-	req := httptest.NewRequest(http.MethodPost, "https://www.example.com/path1/subpath", strings.NewReader(form))
+func TestValidate_fail_ErrMustBeUnique(t *testing.T) {
+	token, cookie, _ := csrfcookie.Create(defConf, nil, defClaims)
+	formBody := url.QueryEscape(csrfcookie.DefaultFormFieldName) + "=" + url.QueryEscape(token)
+	req := httptest.NewRequest(http.MethodPost, "https://www.example.com", strings.NewReader(formBody))
+	req.Header.Add("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Add("Origin", "https://www.example.com")
+	req.Header.Add("Referer", "https://www.example.com")
+	req.Header.Add(csrfcookie.DefaultHeaderName, token)
+	//Non related Cookie
 	req.AddCookie(&http.Cookie{
 		Name:  "Spurious-Cookie",
 		Value: "Spurious Value",
 	})
+	//Double Add the same cookie.
 	req.AddCookie(cookie)
-	cookie2 := &http.Cookie{
-		Name:  csrfcookie.DefaultName,
-		Value: "123456789011234546789091234567890",
+	req.AddCookie(cookie)
+	err := csrfcookie.ValidateWithForm(defConf, req)
+	if want, got := csrfcookie.ErrMustBeUnique, err; want != got {
+		t.Fatalf("want=%q, got=%q", want, got)
 	}
-	req.AddCookie(cookie2)
+
+	err = csrfcookie.ValidateWithHeader(defConf, req)
+	if want, got := csrfcookie.ErrMustBeUnique, err; want != got {
+		t.Fatalf("want=%q, got=%q", want, got)
+	}
+}
+
+func TestValidate_fail_ErrNotFound(t *testing.T) {
+	token, _, _ := csrfcookie.Create(defConf, nil, defClaims)
+	formBody := url.QueryEscape(csrfcookie.DefaultFormFieldName) + "=" + url.QueryEscape(token)
+	req := httptest.NewRequest(http.MethodPost, "https://www.example.com", strings.NewReader(formBody))
 	req.Header.Add("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Add("Origin", "https://www.example.com")
 	req.Header.Add("Referer", "https://www.example.com")
-	rr := httptest.NewRecorder()
-	handler.ServeHTTP(rr, req)
-	if want, got := http.StatusForbidden, rr.Code; want != got {
-		t.Fatalf("want=%d, got=%d, body=%q", want, got, rr.Body.String())
-	}
-	if want, got := "ErrMustBeUnique", rr.Body.String(); want != got {
+
+	err := csrfcookie.ValidateWithForm(defConf, req)
+	if want, got := csrfcookie.ErrNotFound, err; want != got {
 		t.Fatalf("want=%q, got=%q", want, got)
 	}
-	chkCookies := readSetCookies(rr.Header())
-	cookieDeletionCount := 0
-	for _, chkCookie := range chkCookies {
-		if chkCookie.Name != csrfcookie.DefaultName {
-			continue
-		}
-		if want, got := "< 0", chkCookie.MaxAge; got >= 0 {
-			t.Fatalf("want=%q, got=%d", want, got)
-		}
-		cookieDeletionCount++
+
+	err = csrfcookie.ValidateWithHeader(defConf, req)
+	if want, got := csrfcookie.ErrNotFound, err; want != got {
+		t.Fatalf("want=%q, got=%q", want, got)
 	}
-	if want, got := 12, cookieDeletionCount; want != got {
-		t.Fatalf("want=%d, got=%d", want, got)
+
+}
+
+func TestValue_fail_ErrNotFound(t *testing.T) {
+	token, _, _ := csrfcookie.Create(defConf, nil, defClaims)
+	formBody := url.QueryEscape(csrfcookie.DefaultFormFieldName) + "=" + url.QueryEscape(token)
+	req := httptest.NewRequest(http.MethodPost, "https://www.example.com", strings.NewReader(formBody))
+	req.Header.Add("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Add("Origin", "https://www.example.com")
+	req.Header.Add("Referer", "https://www.example.com")
+
+	value, err := csrfcookie.Value(defConf, req)
+	if wantValue, gotValue, wantErr, gotErr := "", value, csrfcookie.ErrNotFound, err; wantValue != gotValue || wantErr != gotErr {
+		t.Fatalf("wantValue=%q, gotValue=%q, wantErr=%q, getErr=%q", wantValue, gotValue, wantErr, gotErr)
 	}
 }
 
-func TestNewFormHandler_fail_ErrNotFound(t *testing.T) {
-	handler, form, _ := setupFormHandlerAndRequestGETOnCreateCSRF(t, defConf, "https://www.example.com")
-	rr := newPostFormRequest(t, handler, "https://www.example.com", nil, "", "https://www.example.com", form)
-	if want, got := http.StatusForbidden, rr.Code; want != got {
-		t.Fatalf("want=%d, got=%d, body=%q", want, got, rr.Body.String())
-	}
-	if want, got := "ErrNotFound", rr.Body.String(); want != got {
-		t.Fatalf("want=%q, got=%q", want, got)
-	}
-}
-
-func TestNewFormHandler_fail_ErrTokenValuesMustMatch(t *testing.T) {
-	handler, _, cookie := setupFormHandlerAndRequestGETOnCreateCSRF(t, defConf, "https://www.example.com")
-	rr := newPostFormRequest(t, handler, "https://www.example.com", cookie, "", "https://www.example.com", "")
-	if want, got := http.StatusForbidden, rr.Code; want != got {
-		t.Fatalf("want=%d, got=%d, body=%q", want, got, rr.Body.String())
-	}
-	if want, got := "ErrTokenValuesMustMatch", rr.Body.String(); want != got {
-		t.Fatalf("want=%q, got=%q", want, got)
-	}
-}
-
-func TestNewFormHandler_fail_ErrSecretError(t *testing.T) {
-	conf := &csrfcookie.Config{SecretFunc: defaultSecret, ErrorHandler: http.HandlerFunc(errorHandlerFunc)}
-	handler, form, cookie := setupFormHandlerAndRequestGETOnCreateCSRF(t, conf, "https://www.example.com")
-	conf.SecretFunc = nil
-	rr := newPostFormRequest(t, handler, "https://www.example.com", cookie, "", "https://www.example.com", form)
-	if want, got := http.StatusInternalServerError, rr.Code; want != got {
-		t.Fatalf("want=%d, got=%d, body=%q", want, got, rr.Body.String())
-	}
-	if want, got := "ErrSecretError", rr.Body.String(); want != got {
-		t.Fatalf("want=%q, got=%q", want, got)
-	}
-	conf.SecretFunc = func(r *http.Request) []byte {
-		return nil
-	}
-	rr = newPostFormRequest(t, handler, "https://www.example.com", cookie, "", "https://www.example.com", form)
-	if want, got := http.StatusInternalServerError, rr.Code; want != got {
-		t.Fatalf("want=%d, got=%d, body=%q", want, got, rr.Body.String())
-	}
-	if want, got := "ErrSecretError", rr.Body.String(); want != got {
-		t.Fatalf("want=%q, got=%q", want, got)
-	}
-	conf.SecretFunc = func(r *http.Request) []byte {
-		return []byte{}
-	}
-	rr = newPostFormRequest(t, handler, "https://www.example.com", cookie, "", "https://www.example.com", form)
-	if want, got := http.StatusInternalServerError, rr.Code; want != got {
-		t.Fatalf("want=%d, got=%d, body=%q", want, got, rr.Body.String())
-	}
-	if want, got := "ErrSecretError", rr.Body.String(); want != got {
-		t.Fatalf("want=%q, got=%q", want, got)
-	}
-}
-
-func TestNewFormHandler_fail_ErrTokenSignatureMustMatch(t *testing.T) {
-	conf := &csrfcookie.Config{SecretFunc: defaultSecret, ErrorHandler: http.HandlerFunc(errorHandlerFunc)}
-	handler, form, cookie := setupFormHandlerAndRequestGETOnCreateCSRF(t, conf, "https://www.example.com")
-	conf.SecretFunc = func(r *http.Request) []byte {
-		return []byte("othersecret")
-	}
-	rr := newPostFormRequest(t, handler, "https://www.example.com", cookie, "", "https://www.example.com", form)
-	if want, got := http.StatusForbidden, rr.Code; want != got {
-		t.Fatalf("want=%d, got=%d, body=%q", want, got, rr.Body.String())
-	}
-	if want, got := "ErrTokenSignatureMustMatch", rr.Body.String(); want != got {
-		t.Fatalf("want=%q, got=%q", want, got)
-	}
-}
-
-//******************
-
-func TestNewAPIHandler_fail_ErrRefererMustMatchOrigin(t *testing.T) {
-	conf := &csrfcookie.Config{SecretFunc: defaultSecret, ErrorHandler: http.HandlerFunc(errorHandlerFunc)}
-	if err := conf.SetDomain(".example.com"); err != nil {
-		t.Fatal(err)
-	}
-	handler, csrfValue, cookie := setupAPIHandlerAndRequestGETOnCreateCSRF(t, conf, "https://www.example.com")
-	rr := newPostAPIRequest(t, handler, "https://www.example.com", cookie, "https://app1.example.com", "https://app2.example.com", csrfcookie.DefaultHeaderName, csrfValue)
-	if want, got := http.StatusForbidden, rr.Code; want != got {
-		t.Fatalf("want=%d, got=%d, body=%q", want, got, rr.Body.String())
-	}
-	if want, got := "ErrOriginAndRefererMustMatch", rr.Body.String(); want != got {
-		t.Fatalf("want=%q, got=%q", want, got)
-	}
-}
-
-func TestNewAPIHandler_fail_ErrMustBeUnique(t *testing.T) {
-	handler, csrfValue, cookie := setupAPIHandlerAndRequestGETOnCreateCSRF(t, defConf, "https://www.example.com/path1/subpath")
-	req := httptest.NewRequest(http.MethodPost, "https://www.example.com/path1/subpath", strings.NewReader(csrfValue))
+func TestValidate_fail_ErrTokenValuesMustMatch(t *testing.T) {
+	token, cookie, _ := csrfcookie.Create(defConf, nil, defClaims)
+	formBody := url.QueryEscape(csrfcookie.DefaultFormFieldName) + "=" + url.QueryEscape(token+"!!!")
+	req := httptest.NewRequest(http.MethodPost, "https://www.example.com", strings.NewReader(formBody))
+	req.Header.Add("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Add("Origin", "https://www.example.com")
+	req.Header.Add("Referer", "https://www.example.com")
+	req.Header.Add(csrfcookie.DefaultHeaderName, token+"!!!")
 	req.AddCookie(cookie)
-	cookie2 := &http.Cookie{
-		Name:  csrfcookie.DefaultName,
-		Value: "123456789011234546789091234567890",
-	}
-	req.AddCookie(cookie2)
-	req.Header.Add("Content-Type", "application/x-www-csrfValue-urlencoded")
-	req.Header.Add("Referer", "https://www.example.com")
-	rr := httptest.NewRecorder()
-	handler.ServeHTTP(rr, req)
-	if want, got := http.StatusForbidden, rr.Code; want != got {
-		t.Fatalf("want=%d, got=%d, body=%q", want, got, rr.Body.String())
-	}
-	if want, got := "ErrMustBeUnique", rr.Body.String(); want != got {
+	err := csrfcookie.ValidateWithForm(defConf, req)
+	if want, got := csrfcookie.ErrTokenValuesMustMatch, err; want != got {
 		t.Fatalf("want=%q, got=%q", want, got)
 	}
-	chkCookies := readSetCookies(rr.Header())
-	cookieDeletionCount := 0
-	for _, chkCookie := range chkCookies {
-		if chkCookie.Name != csrfcookie.DefaultName {
-			continue
-		}
-		if want, got := "< 0", chkCookie.MaxAge; got >= 0 {
-			t.Fatalf("want=%q, got=%d", want, got)
-		}
-		cookieDeletionCount++
-	}
-	if want, got := 12, cookieDeletionCount; want != got {
-		t.Fatalf("want=%d, got=%d", want, got)
-	}
-}
 
-func TestNewAPIHandler_fail_ErrNotFound(t *testing.T) {
-	handler, csrfValue, _ := setupAPIHandlerAndRequestGETOnCreateCSRF(t, defConf, "https://www.example.com")
-	rr := newPostAPIRequest(t, handler, "https://www.example.com", nil, "", "https://www.example.com", csrfcookie.DefaultHeaderName, csrfValue)
-	if want, got := http.StatusForbidden, rr.Code; want != got {
-		t.Fatalf("want=%d, got=%d, body=%q", want, got, rr.Body.String())
-	}
-	if want, got := "ErrNotFound", rr.Body.String(); want != got {
+	err = csrfcookie.ValidateWithHeader(defConf, req)
+	if want, got := csrfcookie.ErrTokenValuesMustMatch, err; want != got {
 		t.Fatalf("want=%q, got=%q", want, got)
 	}
 }
 
-func TestNewAPIHandler_fail_ErrTokenValuesMustMatch(t *testing.T) {
-	handler, _, cookie := setupAPIHandlerAndRequestGETOnCreateCSRF(t, defConf, "https://www.example.com")
-	rr := newPostAPIRequest(t, handler, "https://www.example.com", cookie, "", "https://www.example.com", csrfcookie.DefaultHeaderName, "")
-	if want, got := http.StatusForbidden, rr.Code; want != got {
-		t.Fatalf("want=%d, got=%d, body=%q", want, got, rr.Body.String())
-	}
-	if want, got := "ErrTokenValuesMustMatch", rr.Body.String(); want != got {
-		t.Fatalf("want=%q, got=%q", want, got)
-	}
-}
-
-func TestNewAPIHandler_fail_ErrSecretError(t *testing.T) {
-	conf := &csrfcookie.Config{SecretFunc: defaultSecret, ErrorHandler: http.HandlerFunc(errorHandlerFunc)}
-	handler, csrfValue, cookie := setupAPIHandlerAndRequestGETOnCreateCSRF(t, conf, "https://www.example.com")
-	conf.SecretFunc = nil
-	rr := newPostAPIRequest(t, handler, "https://www.example.com", cookie, "", "https://www.example.com", csrfcookie.DefaultHeaderName, csrfValue)
-	if want, got := http.StatusInternalServerError, rr.Code; want != got {
-		t.Fatalf("want=%d, got=%d, body=%q", want, got, rr.Body.String())
-	}
-	if want, got := "ErrSecretError", rr.Body.String(); want != got {
-		t.Fatalf("want=%q, got=%q", want, got)
-	}
-	conf.SecretFunc = func(r *http.Request) []byte {
+func TestValidate_fail_ErrSecretError(t *testing.T) {
+	nilSecretFn := func(r *http.Request) []byte {
 		return nil
 	}
-	rr = newPostAPIRequest(t, handler, "https://www.example.com", cookie, "", "https://www.example.com", csrfcookie.DefaultHeaderName, csrfValue)
-	if want, got := http.StatusInternalServerError, rr.Code; want != got {
-		t.Fatalf("want=%d, got=%d, body=%q", want, got, rr.Body.String())
-	}
-	if want, got := "ErrSecretError", rr.Body.String(); want != got {
-		t.Fatalf("want=%q, got=%q", want, got)
-	}
-	conf.SecretFunc = func(r *http.Request) []byte {
+
+	emptySecretFn := func(r *http.Request) []byte {
 		return []byte{}
 	}
-	rr = newPostAPIRequest(t, handler, "https://www.example.com", cookie, "", "https://www.example.com", csrfcookie.DefaultHeaderName, csrfValue)
-	if want, got := http.StatusInternalServerError, rr.Code; want != got {
-		t.Fatalf("want=%d, got=%d, body=%q", want, got, rr.Body.String())
+
+	conf := &csrfcookie.Config{SecretFunc: defaultSecretFn}
+	token, cookie, err := csrfcookie.Create(conf, nil, defClaims)
+	if want, got := error(nil), err; want != got {
+		t.Fatalf("want=nil, got=%q", got)
 	}
-	if want, got := "ErrSecretError", rr.Body.String(); want != got {
+	formBody := url.QueryEscape(csrfcookie.DefaultFormFieldName) + "=" + url.QueryEscape(token)
+	req := httptest.NewRequest(http.MethodPost, "https://www.example.com", strings.NewReader(formBody))
+	req.Header.Add("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Add("Origin", "https://www.example.com")
+	req.Header.Add("Referer", "https://www.example.com")
+	req.Header.Add(csrfcookie.DefaultHeaderName, token)
+	req.AddCookie(cookie)
+
+	conf.SecretFunc = nil
+	err = csrfcookie.ValidateWithForm(conf, req)
+	if want, got := csrfcookie.ErrSecretError, err; want != got {
+		t.Fatalf("want=%q, got=%q", want, got)
+	}
+	err = csrfcookie.ValidateWithHeader(conf, req)
+	if want, got := csrfcookie.ErrSecretError, err; want != got {
+		t.Fatalf("want=%q, got=%q", want, got)
+	}
+
+	conf.SecretFunc = nilSecretFn
+	err = csrfcookie.ValidateWithForm(conf, req)
+	if want, got := csrfcookie.ErrSecretError, err; want != got {
+		t.Fatalf("want=%q, got=%q", want, got)
+	}
+	err = csrfcookie.ValidateWithHeader(conf, req)
+	if want, got := csrfcookie.ErrSecretError, err; want != got {
+		t.Fatalf("want=%q, got=%q", want, got)
+	}
+
+	conf.SecretFunc = emptySecretFn
+	err = csrfcookie.ValidateWithForm(conf, req)
+	if want, got := csrfcookie.ErrSecretError, err; want != got {
+		t.Fatalf("want=%q, got=%q", want, got)
+	}
+	err = csrfcookie.ValidateWithHeader(conf, req)
+	if want, got := csrfcookie.ErrSecretError, err; want != got {
 		t.Fatalf("want=%q, got=%q", want, got)
 	}
 }
 
-func TestNewAPIHandler_fail_ErrTokenSignatureMustMatch(t *testing.T) {
-	conf := &csrfcookie.Config{SecretFunc: defaultSecret, ErrorHandler: http.HandlerFunc(errorHandlerFunc)}
-	handler, csrfValue, cookie := setupAPIHandlerAndRequestGETOnCreateCSRF(t, conf, "https://www.example.com")
+func TestValidate_fail_ErrTokenSignatureMustMatch(t *testing.T) {
+
+	conf := &csrfcookie.Config{SecretFunc: defaultSecretFn}
+
+	token, cookie, err := csrfcookie.Create(conf, nil, defClaims)
+	if want, got := error(nil), err; want != got {
+		t.Fatalf("want=nil, got=%q", got)
+	}
+
 	conf.SecretFunc = func(r *http.Request) []byte {
 		return []byte("othersecret")
 	}
-	rr := newPostAPIRequest(t, handler, "https://www.example.com", cookie, "", "https://www.example.com", csrfcookie.DefaultHeaderName, csrfValue)
-	if want, got := http.StatusForbidden, rr.Code; want != got {
-		t.Fatalf("want=%d, got=%d, body=%q", want, got, rr.Body.String())
+	formBody := url.QueryEscape(csrfcookie.DefaultFormFieldName) + "=" + url.QueryEscape(token)
+	req := httptest.NewRequest(http.MethodPost, "https://www.example.com", strings.NewReader(formBody))
+	req.Header.Add("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Add("Origin", "https://www.example.com")
+	req.Header.Add("Referer", "https://www.example.com")
+	req.Header.Add(csrfcookie.DefaultHeaderName, token)
+	req.AddCookie(cookie)
+	err = csrfcookie.ValidateWithForm(conf, req)
+	if want, got := csrfcookie.ErrTokenSignatureMustMatch, err; want != got {
+		t.Fatalf("want=%q, got=%q", want, got)
 	}
-	if want, got := "ErrTokenSignatureMustMatch", rr.Body.String(); want != got {
+
+	err = csrfcookie.ValidateWithHeader(conf, req)
+	if want, got := csrfcookie.ErrTokenSignatureMustMatch, err; want != got {
 		t.Fatalf("want=%q, got=%q", want, got)
 	}
 }
 
-//*******************
-
-func TestCreate_fail_ErrClaimsMustBeNotEmpty_NilClaim(t *testing.T) {
-	conf := &csrfcookie.Config{ErrorHandler: http.HandlerFunc(errorHandlerFunc)}
-	h, err := csrfcookie.NewFormHandler(conf, http.HandlerFunc(
-		func(w http.ResponseWriter, r *http.Request) {
-			v, webErr := csrfcookie.Create(w, r, nil)
-			if webErr != nil {
-				w.WriteHeader(webErr.HTTPStatusCode)
-				fmt.Fprint(w, getErrorName(webErr))
-				return
-			}
-			k, webErr := csrfcookie.FormFieldName(r)
-			if webErr != nil {
-				w.WriteHeader(webErr.HTTPStatusCode)
-				fmt.Fprint(w, getErrorName(webErr))
-				return
-			}
-			fmt.Fprint(w, k+"="+v)
-		},
-	))
-	if err != nil {
-		t.Fatal(err)
-	}
-	rr := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "https://www.example.com", nil)
-	h.ServeHTTP(rr, req)
-	if want, got := http.StatusInternalServerError, rr.Code; want != got {
-		t.Fatalf("want=%d, got=%d, body=%q", want, got, rr.Body.String())
-	}
-	if want, got := "ErrClaimsMustBeNotEmpty", rr.Body.String(); want != got {
+func TestCreate_fail_ErrClaimsMustBeNotEmpty(t *testing.T) {
+	token, cookie, err := csrfcookie.Create(defConf, nil, nil)
+	if want, got := token, ""; want != got {
 		t.Fatalf("want=%q, got=%q", want, got)
 	}
-	conf.SecretFunc = func(r *http.Request) []byte {
-		return nil
-	}
-}
-
-func TestCreate_fail_ErrClaimsMustBeNotEmpty_EmptyClaim(t *testing.T) {
-	conf := &csrfcookie.Config{ErrorHandler: http.HandlerFunc(errorHandlerFunc)}
-	h, err := csrfcookie.NewFormHandler(conf, http.HandlerFunc(
-		func(w http.ResponseWriter, r *http.Request) {
-			claims := map[string]interface{}{}
-			v, webErr := csrfcookie.Create(w, r, claims)
-			if webErr != nil {
-				w.WriteHeader(webErr.HTTPStatusCode)
-				fmt.Fprint(w, getErrorName(webErr))
-				return
-			}
-			k, webErr := csrfcookie.FormFieldName(r)
-			if webErr != nil {
-				w.WriteHeader(webErr.HTTPStatusCode)
-				fmt.Fprint(w, getErrorName(webErr))
-				return
-			}
-			fmt.Fprint(w, k+"="+v)
-		},
-	))
-	if err != nil {
-		t.Fatal(err)
-	}
-	rr := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "https://www.example.com", nil)
-	h.ServeHTTP(rr, req)
-	if want, got := http.StatusInternalServerError, rr.Code; want != got {
-		t.Fatalf("want=%d, got=%d, body=%q", want, got, rr.Body.String())
-	}
-	if want, got := "ErrClaimsMustBeNotEmpty", rr.Body.String(); want != got {
+	if want, got := (*http.Cookie)(nil), cookie; want != got {
 		t.Fatalf("want=%q, got=%q", want, got)
 	}
-	conf.SecretFunc = func(r *http.Request) []byte {
-		return nil
+	if want, got := csrfcookie.ErrClaimsMustBeNotEmpty, err; want != got {
+		t.Fatalf("want=%q, got=%q", want, got)
+	}
+
+	emptyClaims := map[string]interface{}{}
+
+	token, cookie, err = csrfcookie.Create(defConf, nil, emptyClaims)
+	if want, got := token, ""; want != got {
+		t.Fatalf("want=%q, got=%q", want, got)
+	}
+	if want, got := (*http.Cookie)(nil), cookie; want != got {
+		t.Fatalf("want=%q, got=%q", want, got)
+	}
+	if want, got := csrfcookie.ErrClaimsMustBeNotEmpty, err; want != got {
+		t.Fatalf("want=%q, got=%q", want, got)
 	}
 }
 
 func TestCreate_fail_ErrSecretError(t *testing.T) {
-	conf := &csrfcookie.Config{ErrorHandler: http.HandlerFunc(errorHandlerFunc)}
-	h, err := csrfcookie.NewFormHandler(conf, http.HandlerFunc(createCSRFFormValueFunc))
-	if err != nil {
-		t.Fatal(err)
-	}
-	rr := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "https://www.example.com", nil)
-	h.ServeHTTP(rr, req)
-	if want, got := http.StatusInternalServerError, rr.Code; want != got {
-		t.Fatalf("want=%d, got=%d, body=%q", want, got, rr.Body.String())
-	}
-	if want, got := "ErrSecretError", rr.Body.String(); want != got {
-		t.Fatalf("want=%q, got=%q", want, got)
-	}
-	conf.SecretFunc = func(r *http.Request) []byte {
+	nilSecretFn := func(r *http.Request) []byte {
 		return nil
 	}
-	rr = httptest.NewRecorder()
-	req = httptest.NewRequest(http.MethodGet, "https://www.example.com", nil)
-	h.ServeHTTP(rr, req)
-	if want, got := http.StatusInternalServerError, rr.Code; want != got {
-		t.Fatalf("want=%d, got=%d, body=%q", want, got, rr.Body.String())
-	}
-	if want, got := "ErrSecretError", rr.Body.String(); want != got {
-		t.Fatalf("want=%q, got=%q", want, got)
-	}
-	conf.SecretFunc = func(r *http.Request) []byte {
+
+	emptySecretFn := func(r *http.Request) []byte {
 		return []byte{}
 	}
-	rr = httptest.NewRecorder()
-	req = httptest.NewRequest(http.MethodGet, "https://www.example.com", nil)
-	h.ServeHTTP(rr, req)
-	if want, got := http.StatusInternalServerError, rr.Code; want != got {
-		t.Fatalf("want=%d, got=%d, body=%q", want, got, rr.Body.String())
+
+	conf := &csrfcookie.Config{SecretFunc: nilSecretFn}
+	token, cookie, err := csrfcookie.Create(conf, nil, defClaims)
+	if want, got := token, ""; want != got {
+		t.Fatalf("want=%q, got=%q", want, got)
 	}
-	if want, got := "ErrSecretError", rr.Body.String(); want != got {
+	if want, got := (*http.Cookie)(nil), cookie; want != got {
+		t.Fatalf("want=%q, got=%q", want, got)
+	}
+	if want, got := csrfcookie.ErrSecretError, err; want != got {
+		t.Fatalf("want=%q, got=%q", want, got)
+	}
+
+	conf.SecretFunc = emptySecretFn
+	token, cookie, err = csrfcookie.Create(conf, nil, defClaims)
+	if want, got := token, ""; want != got {
+		t.Fatalf("want=%q, got=%q", want, got)
+	}
+	if want, got := (*http.Cookie)(nil), cookie; want != got {
+		t.Fatalf("want=%q, got=%q", want, got)
+	}
+	if want, got := csrfcookie.ErrSecretError, err; want != got {
 		t.Fatalf("want=%q, got=%q", want, got)
 	}
 }
-
-func TestValue_fail_ErrNotFound(t *testing.T) {
-	valueFn := func(w http.ResponseWriter, r *http.Request) {
-		value, webErr := csrfcookie.Value(r)
-		if wantValue, wantErr, gotValue, gotErr := "", csrfcookie.ErrNotFound, value, webErr; wantValue != gotValue || wantErr != gotErr {
-			t.Fatalf("wantValue=%q, gotValue=%q, wantErr=%q, gotErr=%q", wantValue, gotValue, wantErr, gotErr)
-		}
-	}
-	h, err := csrfcookie.NewFormHandler(defConf, http.HandlerFunc(valueFn))
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	rr := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "https://www.example.com", nil)
-	h.ServeHTTP(rr, req)
-}
-
-func TestNewAPIHandler_fail_ErrTokenValuesMustMatch_NoDefaultHandler(t *testing.T) {
-	conf := &csrfcookie.Config{SecretFunc: defaultSecret}
-
-	handler, _, cookie := setupAPIHandlerAndRequestGETOnCreateCSRF(t, conf, "https://www.example.com")
-	rr := newPostAPIRequest(t, handler, "https://www.example.com", cookie, "", "https://www.example.com", csrfcookie.DefaultHeaderName, "")
-	if want, got := http.StatusForbidden, rr.Code; want != got {
-		t.Fatalf("want=%d, got=%d, body=%q", want, got, rr.Body.String())
-	}
-	if want, got := "403 - Forbidden\n", rr.Body.String(); want != got {
-		t.Fatalf("want=%q, got=%q", want, got)
-	}
-}
-
-func cookie(t *testing.T, rr *httptest.ResponseRecorder, cookieName string) (c *http.Cookie) {
-	for _, v := range readSetCookies(rr.HeaderMap) {
-		if v.Name == cookieName {
-			if c != nil {
-				t.Fatal("duplicated cookie")
-			}
-			c = v
-		}
-	}
-	if c == nil {
-		return nil
-	}
-	if want, got := true, c.HttpOnly; want != got {
-		t.Fatalf("want=%t, got=%t", want, got)
-	}
-	if want, got := true, c.Secure; want != got {
-		t.Fatalf("want=%t, got=%t", want, got)
-	}
-	return c
-}
-*/
