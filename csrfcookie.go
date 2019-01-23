@@ -279,9 +279,9 @@ func ValidateWithHeader(c *Config, r *http.Request) error {
 	return nil
 }
 
-//Create a CSRF Token Cookie, put it on Response Headers and return it value.
+//Create a CSRF Token Cookie
 //
-//nonce must be a short-lived value to avoid replay attacks. Normally a session long nonce expiry time is enough.
+//a nonce value in claims must be a short-lived value to avoid replay attacks. Normally a session long nonce expiry time is enough.
 func Create(c *Config, r *http.Request, claims map[string]interface{}) (string, *http.Cookie, error) {
 	if claims == nil || len(claims) == 0 {
 		return "", nil, ErrClaimsMustBeNotEmpty
@@ -338,13 +338,13 @@ func Value(c *Config, r *http.Request) (string, error) {
 
 //TODO Nonce Method. Probably necessary to compare with session token.
 
-//Delete send a Cookie with MaxAge 0 in the response, that commands the browser to delete the CSRF Cookie.
+//Delete returns a Cookie with MaxAge 0, that commands the browser to delete the CSRF Cookie.
 //
-//Use to finish a CSRF Session.
+//Use it to finish a CSRF Session.
 //
 //Notice that the JWT token is still valid even after this method is called.
 //So a external functionality, like CSRF Token revocation or a linked Session Token validation is needed to ensure no replay attacks are used.
-func Delete(c *Config, w http.ResponseWriter) {
+func DeleteCookie(c *Config) *http.Cookie {
 	//Retrieve the custom or default cookie name.
 	cookieName := c.cookieName
 	if cookieName == "" {
@@ -362,7 +362,7 @@ func Delete(c *Config, w http.ResponseWriter) {
 	}
 
 	//Send the cookie in response.
-	http.SetCookie(w, cookie)
+	return cookie
 }
 
 //validateCommonParts the common token validation in form or header CSRF.
