@@ -133,7 +133,8 @@ func TestValue_success(t *testing.T) {
 
 func TestDelete_success(t *testing.T) {
 	rr := httptest.NewRecorder()
-	csrfcookie.Delete(defConf, rr)
+	deleteCookie := csrfcookie.DeleteCookie(defConf)
+	http.SetCookie(rr, deleteCookie)
 	chkCookies := readSetCookies(rr.Header())
 	cookieDeletionCount := 0
 	for _, chkCookie := range chkCookies {
