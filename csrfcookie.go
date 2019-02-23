@@ -27,14 +27,12 @@
 package csrfcookie
 
 import (
-	"crypto/rand"
 	"errors"
 	"mime"
 	"net/http"
 	"net/textproto"
 	"net/url"
 	"strings"
-	"sync"
 
 	"gitlab.com/gopherburrow/cookie"
 	"gitlab.com/gopherburrow/jwt"
@@ -77,8 +75,6 @@ var (
 	ErrPathMustMatchRequest = errors.New("csrfcookie: CSRF protection cookie path must match request path")
 	//ErrClaimsMustBeNotEmpty ir returned when claims are nil or empty in Create() method.
 	ErrClaimsMustBeNotEmpty = errors.New("csrfcookie: claims must be not empty")
-	//ErrSecretError is returned when the csrfcookie.Config.SecretFunc is set but it returned a empty secret.
-	ErrSecretError = errors.New("csrfcookie: the CSRF token secret cannot be empty")
 )
 
 //Errors caused by a malformed or malicious request when serving a request in ServeHTTP() method.
@@ -104,8 +100,6 @@ var (
 	ErrNotFound = errors.New("csrfcookie: CSRF protection cookie not found (possible CSRF attack)")
 	//ErrTokenValuesMustMatch is returned when the value from the CSRF Token cookie does not match the form field value. This is the most common case for a CSRF attack.
 	ErrTokenValuesMustMatch = errors.New("csrfcookie: CSRF cookie and token values must match (possible CSRF attack)")
-	//ErrTokenSignatureMustMatch is returned when the CSRF protection cookie and form values are received, but the signature is not valid or is tampered.
-	ErrTokenSignatureMustMatch = errors.New("csrfcookie: CSRF token signature does not match (possible CSRF attack)")
 )
 
 //ErrRequestMustBeXWwwFormURLEncoded is returned when using ValidateWithForm() and the request not came from a HTML Form.
@@ -116,13 +110,6 @@ var ErrCannotReadFormValues = errors.New("csrfcookie: form values cannot be read
 
 //Config stores the configuration for a set of HTTP resources that will be protected against CSRF attacks.
 type Config struct {
-	//SecretFunc is a function that will be used to create the secret for the HMAC-SHA256 signature for the CSRF Token JWT.
-	//It can be used to rotate the secret, shared the between multiple instances of a Handler or even multiple server instances.
-	//It MUST return a non nil and not empty secret.
-	SecretFunc func(r *http.Request) []byte
-
-	secret     []byte
-	secretOnce sync.Once
 	//cookieName stores a custom user defined cookie name used to store the CSRF Token.
 	//It can only be set in SetName(name) method.
 	cookieName string
@@ -215,8 +202,8 @@ func (c *Config) SetHeaderName(name string) error {
 	return nil
 }
 
-//ValidateWithForm validates the CSRF Token in the form.
-func ValidateWithForm(c *Config, r *http.Request) error {
+//ValidateRequestWithForm validates the CSRF Token in the form.
+func ValidateRequestWithForm(c *Config, secret []byte, r *http.Request) error {
 	//There is no necessity to protect a nullipotent request. Skip the validation.
 	if r.Method == http.MethodGet || r.Method == http.MethodHead || r.Method == http.MethodTrace || r.Method == http.MethodOptions {
 		return nil
@@ -249,7 +236,7 @@ func ValidateWithForm(c *Config, r *http.Request) error {
 	formCsrfToken := r.PostForm.Get(formFieldName)
 
 	//Check the if token value match and is correctly signed.
-	if err := checkTokenValue(c, r, formCsrfToken); err != nil {
+	if err := checkTokenValue(c, secret, r, formCsrfToken); err != nil {
 		return err
 	}
 
@@ -257,8 +244,8 @@ func ValidateWithForm(c *Config, r *http.Request) error {
 	return nil
 }
 
-//ValidateWithHeader validates the CSRF Token in the header.
-func ValidateWithHeader(c *Config, r *http.Request) error {
+//ValidateRequestWithHeader validates the CSRF Token in the header.
+func ValidateRequestWithHeader(c *Config, secret []byte, r *http.Request) error {
 
 	//There is no necessity to protect a nullipotent request. Skip the validation.
 	if r.Method == http.MethodGet || r.Method == http.MethodHead || r.Method == http.MethodTrace || r.Method == http.MethodOptions {
@@ -278,7 +265,7 @@ func ValidateWithHeader(c *Config, r *http.Request) error {
 	headerCsrfToken := r.Header.Get(headerName)
 
 	//Check the if token value match and is correctly signed.
-	if err := checkTokenValue(c, r, headerCsrfToken); err != nil {
+	if err := checkTokenValue(c, secret, r, headerCsrfToken); err != nil {
 		return err
 	}
 
@@ -289,20 +276,16 @@ func ValidateWithHeader(c *Config, r *http.Request) error {
 //Create a CSRF Token Cookie
 //
 //a nonce value in claims must be a short-lived value to avoid replay attacks. Normally a session long nonce expiry time is enough.
-func Create(c *Config, r *http.Request, claims map[string]interface{}) (string, *http.Cookie, error) {
+func Create(c *Config, secret []byte, claims map[string]interface{}) (string, *http.Cookie, error) {
 	if claims == nil || len(claims) == 0 {
 		return "", nil, ErrClaimsMustBeNotEmpty
 	}
 
-	//Recover the secret handling errors.
-	s, err := secret(c, r)
+	//Create the signed token, if there is an error return it.
+	token, err := jwt.CreateHS256(claims, secret)
 	if err != nil {
 		return "", nil, err
 	}
-
-	//Create the signed token, if there is an error return it.
-	//NO ERROR occurrence here.
-	jwt, _ := jwt.CreateHS256(claims, s)
 
 	//Create the cookie using the Handler settings and return it.
 	cookieName := c.cookieName
@@ -311,13 +294,13 @@ func Create(c *Config, r *http.Request, claims map[string]interface{}) (string, 
 	}
 	cookie := &http.Cookie{
 		Name:     cookieName,
-		Value:    jwt,
+		Value:    token,
 		Secure:   true,
 		HttpOnly: true,
 		Domain:   c.cookieDomain,
 		Path:     c.cookiePath,
 	}
-	return jwt, cookie, nil
+	return token, cookie, nil
 }
 
 //Value returns the form field value used for CSRF Protection.
@@ -495,7 +478,7 @@ func checkReferer(c *Config, r *http.Request) error {
 	return nil
 }
 
-func checkTokenValue(c *Config, r *http.Request, requestToken string) error {
+func checkTokenValue(c *Config, secret []byte, r *http.Request, requestToken string) error {
 	//Retrieve the CSRF token value from cookie checking if it exists.
 	cookieName := c.cookieName
 	if cookieName == "" {
@@ -526,40 +509,10 @@ func checkTokenValue(c *Config, r *http.Request, requestToken string) error {
 		return ErrTokenValuesMustMatch
 	}
 
-	//Recover the secret handling errors.
-	s, err := secret(c, r)
-	if err != nil {
+	//Test if it is ours token (verifying the signature), and not a token created by an attacker.
+	if _, err := jwt.ValidateHS256(cookieCsrfToken, secret); err != nil {
 		return err
 	}
 
-	//Test if it is ours token (verifying the signature), and not a token created by an attacker.
-	if _, err := jwt.ValidateHS256(cookieCsrfToken, s); err != nil {
-		return ErrTokenSignatureMustMatch
-	}
-
 	return nil
-}
-
-func secret(c *Config, r *http.Request) ([]byte, error) {
-	//Retrieve the Token secret (Custom). Handle errors.
-	if c.SecretFunc != nil {
-		secret := c.SecretFunc(r)
-		//It is part of the contract. Never return an empty secret. (Because it is no secret that way.)
-		if secret == nil || len(secret) == 0 {
-			return nil, ErrSecretError
-		}
-		return secret, nil
-	}
-
-	//If a default secret was already created, return it.
-	if c.secret != nil {
-		return c.secret, nil
-	}
-
-	c.secretOnce.Do(func() {
-		c.secret = make([]byte, defaultKeySize)
-		rand.Read(c.secret)
-	})
-
-	return c.secret, nil
 }
