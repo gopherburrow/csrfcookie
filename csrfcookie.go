@@ -27,16 +27,20 @@
 package csrfcookie
 
 import (
+	"crypto/rand"
 	"errors"
 	"mime"
 	"net/http"
 	"net/textproto"
 	"net/url"
 	"strings"
+	"sync"
 
 	"gitlab.com/gopherburrow/cookie"
 	"gitlab.com/gopherburrow/jwt"
 )
+
+const defaultKeySize = 32
 
 const (
 	//DefaultName stores the default cookie name that will be used if no csrfcookie.Config.SetName() method is called.
@@ -114,8 +118,11 @@ var ErrCannotReadFormValues = errors.New("csrfcookie: form values cannot be read
 type Config struct {
 	//SecretFunc is a function that will be used to create the secret for the HMAC-SHA256 signature for the CSRF Token JWT.
 	//It can be used to rotate the secret, shared the between multiple instances of a Handler or even multiple server instances.
-	//It MUST return a non nil secret nor an empty one.
+	//It MUST return a non nil and not empty secret.
 	SecretFunc func(r *http.Request) []byte
+
+	secret     []byte
+	secretOnce sync.Once
 	//cookieName stores a custom user defined cookie name used to store the CSRF Token.
 	//It can only be set in SetName(name) method.
 	cookieName string
@@ -534,15 +541,25 @@ func checkTokenValue(c *Config, r *http.Request, requestToken string) error {
 }
 
 func secret(c *Config, r *http.Request) ([]byte, error) {
-	//Retrieve the Token secret (Custom or generated). Handle errors.
-	if c.SecretFunc == nil {
-		return nil, ErrSecretError
-	}
-	secret := c.SecretFunc(r)
-	//It is part of the contract. Never return an empty secret. (Because it is no secret that way.)
-	if secret == nil || len(secret) == 0 {
-		return nil, ErrSecretError
+	//Retrieve the Token secret (Custom). Handle errors.
+	if c.SecretFunc != nil {
+		secret := c.SecretFunc(r)
+		//It is part of the contract. Never return an empty secret. (Because it is no secret that way.)
+		if secret == nil || len(secret) == 0 {
+			return nil, ErrSecretError
+		}
+		return secret, nil
 	}
 
-	return secret, nil
+	//If a default secret was already created, return it.
+	if c.secret != nil {
+		return c.secret, nil
+	}
+
+	c.secretOnce.Do(func() {
+		c.secret = make([]byte, defaultKeySize)
+		rand.Read(c.secret)
+	})
+
+	return c.secret, nil
 }

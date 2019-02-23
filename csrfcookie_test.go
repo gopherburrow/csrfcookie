@@ -10,12 +10,8 @@ import (
 	"gitlab.com/gopherburrow/csrfcookie"
 )
 
-var defConf = &csrfcookie.Config{SecretFunc: defaultSecretFn}
+var defConf = &csrfcookie.Config{}
 var defClaims = map[string]interface{}{"nonce": "123456"}
-
-func defaultSecretFn(r *http.Request) []byte {
-	return []byte("secret")
-}
 
 func TestValidate_success_default(t *testing.T) {
 	token, cookie, _ := csrfcookie.Create(defConf, nil, defClaims)
@@ -191,7 +187,7 @@ func TestValidate_fail_ErrMustUseTLS(t *testing.T) {
 }
 
 func TestValidate_fail_ErrCookieDomainMustMatchRequest(t *testing.T) {
-	conf := &csrfcookie.Config{SecretFunc: defaultSecretFn}
+	conf := &csrfcookie.Config{}
 	if err := conf.SetCookieDomain(".example.com"); err != nil {
 		t.Fatal(err)
 	}
@@ -214,7 +210,7 @@ func TestValidate_fail_ErrCookieDomainMustMatchRequest(t *testing.T) {
 }
 
 func TestValidate_fail_ErrPathMustMatchRequest(t *testing.T) {
-	conf := &csrfcookie.Config{SecretFunc: defaultSecretFn}
+	conf := &csrfcookie.Config{}
 	if err := conf.SetCookiePath("/api"); err != nil {
 		t.Fatal(err)
 	}
@@ -269,7 +265,7 @@ func TestValidate_fail_ErrOriginMustMatchRequest(t *testing.T) {
 }
 
 func TestValidate_fail_ErrOriginMustMatchRequestCookieDomain(t *testing.T) {
-	conf := &csrfcookie.Config{SecretFunc: defaultSecretFn}
+	conf := &csrfcookie.Config{}
 	if err := conf.SetCookieDomain(".example.com"); err != nil {
 		t.Fatal(err)
 	}
@@ -292,7 +288,7 @@ func TestValidate_fail_ErrOriginMustMatchRequestCookieDomain(t *testing.T) {
 }
 
 func TestValidate_fail_ErrOriginMustMatchRequestCookie_invalidOriginURL(t *testing.T) {
-	conf := &csrfcookie.Config{SecretFunc: defaultSecretFn}
+	conf := &csrfcookie.Config{}
 	if err := conf.SetCookieDomain(".example.com"); err != nil {
 		t.Fatal(err)
 	}
@@ -371,7 +367,7 @@ func TestValidate_fail_ErrRefererMustMatchCookiePath_invalidRefererURL(t *testin
 }
 
 func TestValidate_fail_ErrRefererMustMatchCookieDomain(t *testing.T) {
-	conf := &csrfcookie.Config{SecretFunc: defaultSecretFn}
+	conf := &csrfcookie.Config{}
 	if err := conf.SetCookieDomain(".example.com"); err != nil {
 		t.Fatal(err)
 	}
@@ -397,7 +393,7 @@ func TestValidate_fail_ErrRefererMustMatchCookieDomain(t *testing.T) {
 }
 
 func TestValidate_fail_ErrRefererMustMatchCookiePath(t *testing.T) {
-	conf := &csrfcookie.Config{SecretFunc: defaultSecretFn}
+	conf := &csrfcookie.Config{}
 	if err := conf.SetCookiePath("/api"); err != nil {
 		t.Fatal(err)
 	}
@@ -422,7 +418,7 @@ func TestValidate_fail_ErrRefererMustMatchCookiePath(t *testing.T) {
 }
 
 func TestValidate_fail_ErrRefererMustMatchOrigin(t *testing.T) {
-	conf := &csrfcookie.Config{SecretFunc: defaultSecretFn}
+	conf := &csrfcookie.Config{}
 	if err := conf.SetCookieDomain(".example.com"); err != nil {
 		t.Fatal(err)
 	}
@@ -547,6 +543,10 @@ func TestValidate_fail_ErrTokenValuesMustMatch(t *testing.T) {
 }
 
 func TestValidate_fail_ErrSecretError(t *testing.T) {
+	someSecretFn := func(r *http.Request) []byte {
+		return []byte("secret")
+	}
+
 	nilSecretFn := func(r *http.Request) []byte {
 		return nil
 	}
@@ -555,7 +555,7 @@ func TestValidate_fail_ErrSecretError(t *testing.T) {
 		return []byte{}
 	}
 
-	conf := &csrfcookie.Config{SecretFunc: defaultSecretFn}
+	conf := &csrfcookie.Config{SecretFunc: someSecretFn}
 	token, cookie, err := csrfcookie.Create(conf, nil, defClaims)
 	if want, got := error(nil), err; want != got {
 		t.Fatalf("want=nil, got=%q", got)
@@ -567,16 +567,6 @@ func TestValidate_fail_ErrSecretError(t *testing.T) {
 	req.Header.Add("Referer", "https://www.example.com")
 	req.Header.Add(csrfcookie.DefaultHeaderName, token)
 	req.AddCookie(cookie)
-
-	conf.SecretFunc = nil
-	err = csrfcookie.ValidateWithForm(conf, req)
-	if want, got := csrfcookie.ErrSecretError, err; want != got {
-		t.Fatalf("want=%q, got=%q", want, got)
-	}
-	err = csrfcookie.ValidateWithHeader(conf, req)
-	if want, got := csrfcookie.ErrSecretError, err; want != got {
-		t.Fatalf("want=%q, got=%q", want, got)
-	}
 
 	conf.SecretFunc = nilSecretFn
 	err = csrfcookie.ValidateWithForm(conf, req)
@@ -600,17 +590,22 @@ func TestValidate_fail_ErrSecretError(t *testing.T) {
 }
 
 func TestValidate_fail_ErrTokenSignatureMustMatch(t *testing.T) {
+	goodSecretFn := func(r *http.Request) []byte {
+		return []byte("goodsecret")
+	}
 
-	conf := &csrfcookie.Config{SecretFunc: defaultSecretFn}
+	badSecretFn := func(r *http.Request) []byte {
+		return []byte("badsecret")
+	}
+
+	conf := &csrfcookie.Config{SecretFunc: goodSecretFn}
 
 	token, cookie, err := csrfcookie.Create(conf, nil, defClaims)
 	if want, got := error(nil), err; want != got {
 		t.Fatalf("want=nil, got=%q", got)
 	}
 
-	conf.SecretFunc = func(r *http.Request) []byte {
-		return []byte("othersecret")
-	}
+	conf.SecretFunc = badSecretFn
 	formBody := url.QueryEscape(csrfcookie.DefaultFormFieldName) + "=" + url.QueryEscape(token)
 	req := httptest.NewRequest(http.MethodPost, "https://www.example.com", strings.NewReader(formBody))
 	req.Header.Add("Content-Type", "application/x-www-form-urlencoded")
