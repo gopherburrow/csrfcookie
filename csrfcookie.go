@@ -345,7 +345,7 @@ func Value(c *Config, r *http.Request) (string, error) {
 
 //TODO Nonce Method. Probably necessary to compare with session token.
 
-//Delete returns a Cookie with MaxAge 0, that commands the browser to delete the CSRF Cookie.
+//DeleteCookie returns a Cookie with MaxAge 0, that commands the browser to delete the CSRF Cookie.
 //
 //Use it to finish a CSRF Session.
 //
