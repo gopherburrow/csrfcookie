@@ -510,7 +510,7 @@ func checkTokenValue(c *Config, secret []byte, r *http.Request, requestToken str
 	}
 
 	//Test if it is ours token (verifying the signature), and not a token created by an attacker.
-	if _, err := jwt.ValidateHS256(cookieCsrfToken, secret); err != nil {
+	if _, err := jwt.ValidateSignatureHS256(cookieCsrfToken, secret); err != nil {
 		return err
 	}
 
