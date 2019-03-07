@@ -276,15 +276,15 @@ func ValidateRequestWithHeader(c *Config, secret []byte, r *http.Request) error 
 //Create a CSRF Token Cookie
 //
 //a nonce value in claims must be a short-lived value to avoid replay attacks. Normally a session long nonce expiry time is enough.
-func Create(c *Config, secret []byte, claims map[string]interface{}) (string, *http.Cookie, error) {
+func Create(c *Config, secret []byte, claims map[string]interface{}, w http.ResponseWriter) (string, error) {
 	if claims == nil || len(claims) == 0 {
-		return "", nil, ErrClaimsMustBeNotEmpty
+		return "", ErrClaimsMustBeNotEmpty
 	}
 
 	//Create the signed token, if there is an error return it.
 	token, err := jwt.CreateHS256(claims, secret)
 	if err != nil {
-		return "", nil, err
+		return "", err
 	}
 
 	//Create the cookie using the Handler settings and return it.
@@ -300,7 +300,9 @@ func Create(c *Config, secret []byte, claims map[string]interface{}) (string, *h
 		Domain:   c.cookieDomain,
 		Path:     c.cookiePath,
 	}
-	return token, cookie, nil
+
+	http.SetCookie(w, cookie)
+	return token, nil
 }
 
 //Value returns the form field value used for CSRF Protection.
@@ -317,16 +319,25 @@ func Value(c *Config, r *http.Request) (string, error) {
 		name = DefaultName
 	}
 
-	cookie, err := r.Cookie(name)
+	//Find the CSRF Cookie assuring it is unique.
+	//To avoid nasty bugs on users, delete if it is not unique(That is the reason not use r.Cookie(name)).
+	//It can happens when a cookie domain is added or changed.
+	var cookie *http.Cookie
+	for _, ac := range r.Cookies() {
+		if ac.Name != name {
+			continue
+		}
 
-	if err == http.ErrNoCookie || cookie == nil {
+		if cookie != nil {
+			return "", ErrMustBeUnique
+		}
+		cookie = ac
+	}
+	if cookie == nil {
 		return "", ErrNotFound
 	}
-
 	return cookie.Value, nil
 }
-
-//TODO Nonce Method. Probably necessary to compare with session token.
 
 //DeleteCookie returns a Cookie with MaxAge 0, that commands the browser to delete the CSRF Cookie.
 //
@@ -334,7 +345,7 @@ func Value(c *Config, r *http.Request) (string, error) {
 //
 //Notice that the JWT token is still valid even after this method is called.
 //So a external functionality, like CSRF Token revocation or a linked Session Token validation is needed to ensure no replay attacks are used.
-func DeleteCookie(c *Config) *http.Cookie {
+func DeleteCookie(c *Config, w http.ResponseWriter) {
 	//Retrieve the custom or default cookie name.
 	cookieName := c.cookieName
 	if cookieName == "" {
@@ -352,7 +363,7 @@ func DeleteCookie(c *Config) *http.Cookie {
 	}
 
 	//Send the cookie in response.
-	return cookie
+	http.SetCookie(w, cookie)
 }
 
 //validateCommonParts the common token validation in form or header CSRF.
@@ -479,30 +490,11 @@ func checkReferer(c *Config, r *http.Request) error {
 }
 
 func checkTokenValue(c *Config, secret []byte, r *http.Request, requestToken string) error {
-	//Retrieve the CSRF token value from cookie checking if it exists.
-	cookieName := c.cookieName
-	if cookieName == "" {
-		cookieName = DefaultName
+	//Retrieve the CSRF token value from cookie checking if it exists or it is duplicate.
+	cookieCsrfToken, err := Value(c, r)
+	if err != nil {
+		return err
 	}
-
-	//Find the CSRF Cookie assuring it is unique.
-	//To avoid nasty bugs on users, delete if it is not unique(That is the reason not use r.Cookie(name)).
-	//It can happens when a cookie domain is added or changed.
-	var cookie *http.Cookie
-	for _, ac := range r.Cookies() {
-		if ac.Name != cookieName {
-			continue
-		}
-
-		if cookie != nil {
-			return ErrMustBeUnique
-		}
-		cookie = ac
-	}
-	if cookie == nil {
-		return ErrNotFound
-	}
-	cookieCsrfToken := cookie.Value
 
 	//Check if tokens match.
 	if requestToken != cookieCsrfToken {
